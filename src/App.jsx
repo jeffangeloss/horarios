@@ -327,9 +327,13 @@ export default function App() {
                 />
               </div>
 
-              <div className="detail-columns">
-                <div className="course-stack">{renderPersonStack("Gaby", selectedScenario.gaby)}</div>
-                <div className="course-stack">{renderPersonStack("Jeff", selectedScenario.jeff)}</div>
+              <div className="people-grid">
+                <section className="person-panel person-panel-gaby">
+                  {renderPersonStack("Gaby", selectedScenario.gaby, "gaby")}
+                </section>
+                <section className="person-panel person-panel-jeff">
+                  {renderPersonStack("Jeff", selectedScenario.jeff, "jeff")}
+                </section>
               </div>
 
               <div className="detail-columns">
@@ -390,8 +394,8 @@ export default function App() {
               </div>
 
               <div className="schedule-panels">
-                <WeekBoard title="Horario de Gaby" schedule={selectedScenario.gaby} />
-                <WeekBoard title="Horario de Jeff" schedule={selectedScenario.jeff} />
+                <WeekBoard title="Horario de Gaby" schedule={selectedScenario.gaby} personKey="gaby" />
+                <WeekBoard title="Horario de Jeff" schedule={selectedScenario.jeff} personKey="jeff" />
               </div>
             </div>
           ) : null}
@@ -463,12 +467,13 @@ export default function App() {
   );
 }
 
-function renderPersonStack(personLabel, schedule) {
+function renderPersonStack(personLabel, schedule, personKey) {
   return (
     <>
-      <article className="course-card">
+      <article className={`course-card summary-card summary-card-${personKey}`}>
         <header>
           <div>
+            <p className="person-eyebrow">{personKey === "gaby" ? "Ruta principal" : "Ruta alineada"}</p>
             <h3>{personLabel}</h3>
             <p>
               {schedule.selectedCodes.length} curso(s) | huecos {schedule.gapHours} h | remoto eq{" "}
@@ -502,7 +507,7 @@ function renderPersonStack(personLabel, schedule) {
         const sectionId = schedule.selection[code];
         const sectionInfo = course.sections.find((sectionItem) => sectionItem.id === sectionId);
         return (
-          <article key={`${code}-${sectionId}`} className="course-card">
+          <article key={`${code}-${sectionId}`} className={`course-card course-card-${personKey}`}>
             <header>
               <div>
                 <h3>{course.name}</h3>
@@ -542,11 +547,12 @@ function renderPersonStack(personLabel, schedule) {
   );
 }
 
-function WeekBoard({ title, schedule }) {
+function WeekBoard({ title, schedule, personKey }) {
   return (
-    <section className="schedule-card">
+    <section className={`schedule-card schedule-card-${personKey}`}>
       <div className="schedule-head">
         <div>
+          <p className="person-eyebrow">{personKey === "gaby" ? "Horario priorizado" : "Horario acompasado"}</p>
           <h3>{title}</h3>
           <p>
             {schedule.activeDays.length} dias activos | {schedule.meetings.length} bloque(s) | {schedule.gapHours} h de huecos
