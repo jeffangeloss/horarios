@@ -21,9 +21,16 @@ const DEFAULT_FORM = {
 };
 const DAY_NAME_BY_CODE = Object.fromEntries(DAYS.map((day, index) => [day, DAY_LABELS[index]]));
 const START_HOUR = 7;
-const END_HOUR = 22;
-const HOUR_HEIGHT = 38;
-const DAY_HEADER_HEIGHT = 44;
+const END_HOUR = 24;
+const HOUR_HEIGHT = 42;
+const DAY_HEADER_HEIGHT = 48;
+const DAY_SLOT_COUNT = END_HOUR - START_HOUR;
+const WEEK_HEIGHT = DAY_HEADER_HEIGHT + DAY_SLOT_COUNT * HOUR_HEIGHT;
+const SCHEDULE_DIMENSIONS_STYLE = {
+  "--hour-size": `${HOUR_HEIGHT}px`,
+  "--day-header-height": `${DAY_HEADER_HEIGHT}px`,
+  "--week-height": `${WEEK_HEIGHT}px`,
+};
 
 export default function App() {
   const [form, setForm] = useState(DEFAULT_FORM);
@@ -549,7 +556,7 @@ function renderPersonStack(personLabel, schedule, personKey) {
 
 function WeekBoard({ title, schedule, personKey }) {
   return (
-    <section className={`schedule-card schedule-card-${personKey}`}>
+    <section className={`schedule-card schedule-card-${personKey}`} style={SCHEDULE_DIMENSIONS_STYLE}>
       <div className="schedule-head">
         <div>
           <p className="person-eyebrow">{personKey === "gaby" ? "Horario priorizado" : "Horario acompasado"}</p>
@@ -567,9 +574,9 @@ function WeekBoard({ title, schedule, personKey }) {
       <div className="schedule-scroll">
         <div className="schedule-wrap">
           <div className="time-axis">
-            {Array.from({ length: END_HOUR - START_HOUR + 1 }, (_, index) => START_HOUR + index).map((hour) => (
+            {Array.from({ length: DAY_SLOT_COUNT + 1 }, (_, index) => START_HOUR + index).map((hour) => (
               <span key={hour} style={{ top: `${(hour - START_HOUR) * HOUR_HEIGHT + DAY_HEADER_HEIGHT}px` }}>
-                {hour}:00
+                {formatHourLabel(hour)}
               </span>
             ))}
           </div>
@@ -606,7 +613,7 @@ function WeekBoard({ title, schedule, personKey }) {
                   <span className="meeting-detail">{compactProfessorName(meeting.professor)}</span>
                   {meeting.mode === "remote" ? <span className="meeting-mode">Virtual</span> : <span className="meeting-detail">Presencial</span>}
                   <span className="meeting-detail">
-                    {meeting.start}:00 - {meeting.end}:00
+                    {formatHourLabel(meeting.start)} - {formatHourLabel(meeting.end)}
                   </span>
                 </article>
               );
@@ -641,6 +648,13 @@ function compactMeetingName(name) {
     .replace("Seguridad y Bienestar", "Seguridad")
     .replace("Planeamiento", "Planeamiento")
     .replace("Sistemas Distribuidos", "Distribuidos");
+}
+
+function formatHourLabel(hour) {
+  if (hour === 24) {
+    return "00:00";
+  }
+  return `${String(hour).padStart(2, "0")}:00`;
 }
 
 function compactProfessorName(name) {

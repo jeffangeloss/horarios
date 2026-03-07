@@ -24,7 +24,7 @@
   --radius: 26px;
   --hour-size: 42px;
   --day-header-height: 48px;
-  --week-height: calc(var(--day-header-height) + (var(--hour-size) * 15));
+  --week-height: calc(var(--day-header-height) + (var(--hour-size) * 17));
 }
 
 * {
