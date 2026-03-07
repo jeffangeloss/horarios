@@ -595,10 +595,13 @@ function WeekBoard({ title, schedule, personKey }) {
 
             {schedule.meetings.map((meeting) => {
               const courseIndex = COURSES.findIndex((course) => course.code === meeting.code);
+              const durationHours = meeting.end - meeting.start;
+              const sizeClass = durationHours <= 2 ? "is-compact" : durationHours === 3 ? "is-medium" : "is-long";
+              const timeLabel = `${formatHourLabel(meeting.start)} - ${formatHourLabel(meeting.end)}`;
               return (
                 <article
                   key={`${meeting.code}-${meeting.sectionId}-${meeting.day}-${meeting.start}`}
-                  className={`meeting-block ${meeting.mode === "remote" ? "is-remote" : ""}`}
+                  className={`meeting-block ${sizeClass} ${meeting.mode === "remote" ? "is-remote" : ""}`}
                   title={`${meeting.fullName} | ${meeting.professor} | Sec. ${meeting.sectionId} | ${DAY_NAME_BY_CODE[meeting.day]} ${meeting.start}:00-${meeting.end}:00 | ${meeting.mode === "remote" ? "Virtual" : "Presencial"}`}
                   style={{
                     left: `calc(${(DAYS.indexOf(meeting.day) / DAYS.length) * 100}% + 7px)`,
@@ -609,12 +612,20 @@ function WeekBoard({ title, schedule, personKey }) {
                   }}
                 >
                   <strong className="meeting-title">{compactMeetingName(meeting.courseName)}</strong>
-                  <span className="meeting-detail">Sec. {meeting.sectionId}</span>
-                  <span className="meeting-detail">{compactProfessorName(meeting.professor)}</span>
-                  {meeting.mode === "remote" ? <span className="meeting-mode">Virtual</span> : <span className="meeting-detail">Presencial</span>}
-                  <span className="meeting-detail">
-                    {formatHourLabel(meeting.start)} - {formatHourLabel(meeting.end)}
-                  </span>
+                  {durationHours <= 2 ? (
+                    <>
+                      <span className="meeting-meta">Sec. {meeting.sectionId} | {timeLabel}</span>
+                      <span className="meeting-detail">{compactProfessorName(meeting.professor)}</span>
+                      {meeting.mode === "remote" ? <span className="meeting-mode">Virtual</span> : null}
+                    </>
+                  ) : (
+                    <>
+                      <span className="meeting-detail">Sec. {meeting.sectionId}</span>
+                      <span className="meeting-detail">{compactProfessorName(meeting.professor)}</span>
+                      {meeting.mode === "remote" ? <span className="meeting-mode">Virtual</span> : <span className="meeting-detail">Presencial</span>}
+                      <span className="meeting-meta">{timeLabel}</span>
+                    </>
+                  )}
                 </article>
               );
             })}

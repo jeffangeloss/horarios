@@ -801,6 +801,7 @@ select:focus {
 .meeting-block {
   position: absolute;
   display: grid;
+  align-content: start;
   gap: 3px;
   overflow: hidden;
   border-radius: 16px;
@@ -828,19 +829,26 @@ select:focus {
   font-size: 1rem;
   font-weight: 900;
   letter-spacing: -0.01em;
-  overflow-wrap: anywhere;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   line-height: 1.18;
 }
 
 .meeting-detail,
-.meeting-mode {
+.meeting-mode,
+.meeting-meta {
   display: block;
   font-size: 0.8rem;
   font-weight: 700;
   line-height: 1.22;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.meeting-detail {
+.meeting-detail,
+.meeting-meta {
   color: rgba(16, 37, 35, 0.84);
 }
 
@@ -848,6 +856,35 @@ select:focus {
   color: var(--accent-strong);
   text-transform: uppercase;
   letter-spacing: 0.06em;
+}
+
+.meeting-block.is-compact {
+  padding: 8px 9px 7px;
+  gap: 2px;
+}
+
+.meeting-block.is-compact .meeting-title {
+  font-size: 0.88rem;
+}
+
+.meeting-block.is-compact .meeting-detail,
+.meeting-block.is-compact .meeting-mode,
+.meeting-block.is-compact .meeting-meta {
+  font-size: 0.7rem;
+}
+
+.meeting-block.is-medium {
+  padding: 10px 10px 9px;
+}
+
+.meeting-block.is-medium .meeting-title {
+  font-size: 0.94rem;
+}
+
+.meeting-block.is-medium .meeting-detail,
+.meeting-block.is-medium .meeting-mode,
+.meeting-block.is-medium .meeting-meta {
+  font-size: 0.76rem;
 }
 
 .course-catalog {
@@ -993,7 +1030,8 @@ select:focus {
   }
 
   .meeting-detail,
-  .meeting-mode {
+  .meeting-mode,
+  .meeting-meta {
     font-size: 0.74rem;
   }
 }
