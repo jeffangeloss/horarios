@@ -602,7 +602,7 @@ function WeekBoard({ title, schedule, personKey }) {
                 <article
                   key={`${meeting.code}-${meeting.sectionId}-${meeting.day}-${meeting.start}`}
                   className={`meeting-block ${sizeClass} ${meeting.mode === "remote" ? "is-remote" : ""}`}
-                  title={`${meeting.fullName} | ${meeting.professor} | Sec. ${meeting.sectionId} | ${DAY_NAME_BY_CODE[meeting.day]} ${meeting.start}:00-${meeting.end}:00 | ${meeting.mode === "remote" ? "Virtual" : "Presencial"}`}
+                  aria-label={`${meeting.fullName} | ${meeting.professor} | Sec. ${meeting.sectionId} | ${DAY_NAME_BY_CODE[meeting.day]} ${meeting.start}:00-${meeting.end}:00 | ${meeting.mode === "remote" ? "Virtual" : "Presencial"}`}
                   style={{
                     left: `calc(${(DAYS.indexOf(meeting.day) / DAYS.length) * 100}% + 7px)`,
                     width: `calc(${100 / DAYS.length}% - 14px)`,
