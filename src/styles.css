@@ -826,65 +826,60 @@ select:focus {
 
 .meeting-title {
   display: block;
-  font-size: 1rem;
+  font-size: 0.96rem;
   font-weight: 900;
   letter-spacing: -0.01em;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
   line-height: 1.18;
 }
 
-.meeting-detail,
-.meeting-mode,
 .meeting-meta {
   display: block;
-  font-size: 0.8rem;
+  font-size: 0.72rem;
   font-weight: 700;
-  line-height: 1.22;
+  line-height: 1.18;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
-.meeting-detail,
 .meeting-meta {
   color: rgba(16, 37, 35, 0.84);
 }
 
-.meeting-mode {
-  color: var(--accent-strong);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+.meeting-professor {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1.18;
+  color: rgba(16, 37, 35, 0.88);
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .meeting-block.is-compact {
-  padding: 8px 9px 7px;
+  padding: 8px 9px 8px;
   gap: 2px;
 }
 
 .meeting-block.is-compact .meeting-title {
-  font-size: 0.88rem;
+  font-size: 0.82rem;
 }
 
-.meeting-block.is-compact .meeting-detail,
-.meeting-block.is-compact .meeting-mode,
-.meeting-block.is-compact .meeting-meta {
-  font-size: 0.7rem;
+.meeting-block.is-compact .meeting-meta,
+.meeting-block.is-compact .meeting-professor {
+  font-size: 0.64rem;
 }
 
 .meeting-block.is-medium {
-  padding: 10px 10px 9px;
+  padding: 9px 10px 9px;
 }
 
 .meeting-block.is-medium .meeting-title {
-  font-size: 0.94rem;
+  font-size: 0.88rem;
 }
 
-.meeting-block.is-medium .meeting-detail,
-.meeting-block.is-medium .meeting-mode,
-.meeting-block.is-medium .meeting-meta {
-  font-size: 0.76rem;
+.meeting-block.is-medium .meeting-meta,
+.meeting-block.is-medium .meeting-professor {
+  font-size: 0.68rem;
 }
 
 .course-catalog {
@@ -1026,12 +1021,11 @@ select:focus {
   }
 
   .meeting-title {
-    font-size: 0.9rem;
+    font-size: 0.84rem;
   }
 
-  .meeting-detail,
-  .meeting-mode,
-  .meeting-meta {
-    font-size: 0.74rem;
+  .meeting-meta,
+  .meeting-professor {
+    font-size: 0.66rem;
   }
 }

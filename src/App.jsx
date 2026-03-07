@@ -612,20 +612,8 @@ function WeekBoard({ title, schedule, personKey }) {
                   }}
                 >
                   <strong className="meeting-title">{compactMeetingName(meeting.courseName)}</strong>
-                  {durationHours <= 2 ? (
-                    <>
-                      <span className="meeting-meta">Sec. {meeting.sectionId} | {timeLabel}</span>
-                      <span className="meeting-detail">{compactProfessorName(meeting.professor)}</span>
-                      {meeting.mode === "remote" ? <span className="meeting-mode">Virtual</span> : null}
-                    </>
-                  ) : (
-                    <>
-                      <span className="meeting-detail">Sec. {meeting.sectionId}</span>
-                      <span className="meeting-detail">{compactProfessorName(meeting.professor)}</span>
-                      {meeting.mode === "remote" ? <span className="meeting-mode">Virtual</span> : <span className="meeting-detail">Presencial</span>}
-                      <span className="meeting-meta">{timeLabel}</span>
-                    </>
-                  )}
+                  <span className="meeting-meta">Sec. {meeting.sectionId} | {timeLabel}</span>
+                  <span className="meeting-professor">{compactProfessorName(meeting.professor)}</span>
                 </article>
               );
             })}
@@ -670,10 +658,10 @@ function formatHourLabel(hour) {
 
 function compactProfessorName(name) {
   const parts = name.split(" ").filter(Boolean);
-  if (parts.length <= 3) {
+  if (parts.length <= 2) {
     return name;
   }
-  return `${parts.slice(0, 2).join(" ")}...`;
+  return parts.slice(0, 2).join(" ");
 }
 
 function collectCourseProfessors(course) {
