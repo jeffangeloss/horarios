@@ -15,14 +15,28 @@ export const COLOR_PALETTE = [
 ];
 
 export const REQUIRED_GABY_CODES = ["650019", "650063"];
+export const PROPOSAL_CODE = "650066";
 const AVOIDED_PROFESSORS = {
   gaby: {
     "650063": ["IREY NUNEZ JORGE LUIS"],
   },
 };
-const PROPOSAL_CODE = "650066";
 const REMOTE_DAY_WEIGHTS = {
   JUE: 0.35,
+};
+const SCENARIO_BUCKETS = {
+  withProposal: {
+    key: "withProposal",
+    label: "Con Propuesta (Tesis)",
+    limit: 4,
+    description: "Aqui el simulador baja la carga esperada porque tesis exige reservar mas foco y menos dispersion.",
+  },
+  withoutProposal: {
+    key: "withoutProposal",
+    label: "Sin Propuesta",
+    limit: 4,
+    description: "Aqui el simulador empuja un ciclo mas cargado para aprovechar el espacio que deja tesis fuera.",
+  },
 };
 
 export const DEFAULT_SETTINGS = {
@@ -327,7 +341,9 @@ export function solveScenarios(rawSettings) {
   );
   const jeffCache = new Map();
   const topPairs = [];
-  const topLimit = 40;
+  const topPairsWithProposal = [];
+  const topPairsWithoutProposal = [];
+  const topLimit = 140;
 
   for (const gabySchedule of gabySchedules) {
     if (gabySchedule.totalCredits === 0) {
@@ -358,17 +374,45 @@ export function solveScenarios(rawSettings) {
       if (jeffSchedule.totalCredits === 0) {
         continue;
       }
-      insertScenario(topPairs, evaluatePair(gabySchedule, jeffSchedule, settings, profile), topLimit);
+      const evaluated = evaluatePair(gabySchedule, jeffSchedule, settings, profile);
+      insertScenario(topPairs, evaluated, topLimit);
+
+      if (matchesScenarioBucket(evaluated, "withProposal", settings)) {
+        insertScenario(topPairsWithProposal, evaluated, topLimit);
+      }
+
+      if (matchesScenarioBucket(evaluated, "withoutProposal", settings)) {
+        insertScenario(topPairsWithoutProposal, evaluated, topLimit);
+      }
     }
   }
 
   topPairs.sort((left, right) => right.score - left.score);
+  topPairsWithProposal.sort((left, right) => right.score - left.score);
+  topPairsWithoutProposal.sort((left, right) => right.score - left.score);
+  const all = finalizeScenarioBucket(topPairs, 8, {
+    key: "all",
+    label: "Top general",
+    description: "Consolida los mejores escenarios sin separar tesis de no tesis.",
+  }, settings);
+  const withProposal = finalizeScenarioBucket(
+    topPairsWithProposal.length ? topPairsWithProposal : topPairs.filter((scenario) => hasProposalScenario(scenario)),
+    SCENARIO_BUCKETS.withProposal.limit,
+    SCENARIO_BUCKETS.withProposal,
+    settings,
+  );
+  const withoutProposal = finalizeScenarioBucket(
+    topPairsWithoutProposal.length ? topPairsWithoutProposal : topPairs.filter((scenario) => !hasProposalScenario(scenario)),
+    SCENARIO_BUCKETS.withoutProposal.limit,
+    SCENARIO_BUCKETS.withoutProposal,
+    settings,
+  );
 
-  return selectDiverseScenarios(topPairs, 8).map((scenario, index) => ({
-    ...scenario,
-    id: `scenario-${index + 1}`,
-    rank: index + 1,
-  }));
+  return {
+    all,
+    withProposal,
+    withoutProposal,
+  };
 }
 
 function normalizeSettings(rawSettings) {
@@ -642,10 +686,8 @@ function evaluatePair(gabySchedule, jeffSchedule, settings, profile) {
 
 function individualAcademicScore(schedule, person, settings) {
   let score = 0;
-  const targetCredits = Math.min(
-    person === "gaby" ? 17 : 15,
-    person === "gaby" ? settings.gabyCredits : settings.jeffCredits,
-  );
+  const loadProfile = buildLoadProfile(schedule, person, settings);
+  const targetCredits = loadProfile.targetCredits;
 
   for (const code of schedule.selectedCodes) {
     const course = COURSE_MAP.get(code);
@@ -667,15 +709,25 @@ function individualAcademicScore(schedule, person, settings) {
     score += (schedule.totalCredits - targetCredits) * 1.2;
   }
 
+  if (schedule.selectedCodes.length < loadProfile.targetCourseCount) {
+    score -= (loadProfile.targetCourseCount - schedule.selectedCodes.length) * 3.8;
+  } else {
+    score += (schedule.selectedCodes.length - loadProfile.targetCourseCount) * 0.6;
+  }
+
   return score;
 }
 
 function individualComfortPenalty(schedule, person, settings) {
   const cap = person === "gaby" ? settings.gabyCredits : settings.jeffCredits;
-  const targetDifficulty = person === "gaby" ? 17 : 15;
+  const loadProfile = buildLoadProfile(schedule, person, settings);
+  const targetDifficulty = loadProfile.targetDifficulty;
   const highDemandCount = schedule.selectedCodes.filter((code) => COURSE_MAP.get(code).difficulty >= 4).length;
   const proposalPenalty = schedule.selectedCodes.includes(PROPOSAL_CODE)
     ? 6.8 + Math.max(0, highDemandCount - 1) * 1.9
+    : 0;
+  const proposalOverloadPenalty = loadProfile.carriesProposal
+    ? Math.max(0, schedule.totalCredits - loadProfile.targetCredits) * 4.6
     : 0;
 
   const basePenalty =
@@ -686,7 +738,8 @@ function individualComfortPenalty(schedule, person, settings) {
     schedule.gapHours * (person === "gaby" ? 2.05 : 1.35) +
     schedule.earlyCount * (person === "gaby" ? 2.1 : 1.5) +
     Math.max(0, schedule.totalCredits - cap) * 20 +
-    proposalPenalty;
+    proposalPenalty +
+    proposalOverloadPenalty;
 
   const remotePenalty =
     person === "gaby"
@@ -713,8 +766,12 @@ function buildReasons(gabySchedule, jeffSchedule, sharedCodes, sameSectionCodes,
     ...gabySchedule.diplomas,
     ...jeffSchedule.diplomas,
   ]);
+  const gabyLoadProfile = buildLoadProfile(gabySchedule, "gaby", settings);
 
   if (gabySchedule.selectedCodes.includes(PROPOSAL_CODE)) {
+    reasons.push(
+      `Este escenario entra al carril con tesis: el ranking premia bajar carga total y no sobrellenar el ciclo cuando Propuesta entra.`,
+    );
     const remoteDays = gabySchedule.proposalSection?.remoteDays ?? [];
     if (remoteDays.includes("JUE")) {
       reasons.push(
@@ -726,6 +783,9 @@ function buildReasons(gabySchedule, jeffSchedule, sharedCodes, sameSectionCodes,
       );
     }
   } else {
+    reasons.push(
+      `Este escenario entra al carril sin tesis: el ranking exige aprovechar ese espacio para llevar mas cursos y empujar mas avance.`,
+    );
     reasons.push(
       `Gaby concentra mejor sus bloques y evita meter Propuesta de Investigacion cuando no compensa su peso alto este ciclo.`,
     );
@@ -746,6 +806,10 @@ function buildReasons(gabySchedule, jeffSchedule, sharedCodes, sameSectionCodes,
       `Para Gaby pesan ${gabySchedule.nightHours} h en tarde-noche, ${gabySchedule.gapHours} h de huecos y ${gabySchedule.stackedDays} dia(s) con bloques seguidos.`,
     );
   }
+
+  reasons.push(
+    `Carga objetivo de Gaby en este carril: ${gabyLoadProfile.targetCredits} creditos y alrededor de ${gabyLoadProfile.targetCourseCount} curso(s).`,
+  );
 
   if (gabySchedule.remoteSessions) {
     reasons.push(
@@ -855,6 +919,27 @@ function remoteWeightForDay(day) {
   return REMOTE_DAY_WEIGHTS[day] ?? 1;
 }
 
+function buildLoadProfile(schedule, person, settings) {
+  const cap = person === "gaby" ? settings.gabyCredits : settings.jeffCredits;
+  const carriesProposal = schedule.selectedCodes.includes(PROPOSAL_CODE);
+  const creditTargets = carriesProposal
+    ? { gaby: 14, jeff: 12 }
+    : { gaby: 18, jeff: 15 };
+  const difficultyTargets = carriesProposal
+    ? { gaby: 15, jeff: 12 }
+    : { gaby: 18, jeff: 15 };
+  const courseCountTargets = carriesProposal
+    ? { gaby: 5, jeff: 4 }
+    : { gaby: 6, jeff: 5 };
+
+  return {
+    carriesProposal,
+    targetCredits: Math.min(creditTargets[person], cap),
+    targetDifficulty: difficultyTargets[person],
+    targetCourseCount: courseCountTargets[person],
+  };
+}
+
 function uniqueDays(days) {
   return [...new Set(days)];
 }
@@ -897,6 +982,84 @@ function insertScenario(store, scenario, limit) {
   if (store.length > limit) {
     store.length = limit;
   }
+}
+
+function finalizeScenarioBucket(scenarios, limit, bucket, settings) {
+  const sorted = [...scenarios].sort(
+    (left, right) =>
+      bucketPreferenceScore(right, bucket.key, settings) - bucketPreferenceScore(left, bucket.key, settings) ||
+      right.score - left.score,
+  );
+
+  return selectDiverseScenarios(sorted, limit).map((scenario, index) => ({
+    ...scenario,
+    id: `${bucket.key}-${index + 1}`,
+    rank: index + 1,
+    bucketKey: bucket.key,
+    bucketLabel: bucket.label,
+    bucketDescription: bucket.description,
+  }));
+}
+
+function hasProposalScenario(scenario) {
+  return scenario.gaby.selectedCodes.includes(PROPOSAL_CODE);
+}
+
+function matchesScenarioBucket(scenario, bucketKey, settings) {
+  if (bucketKey === "withProposal") {
+    return (
+      hasProposalScenario(scenario) &&
+      scenario.gaby.totalCredits <= Math.min(16, settings.gabyCredits) &&
+      scenario.gaby.selectedCodes.length <= 5 &&
+      scenario.jeff.totalCredits <= Math.min(14, settings.jeffCredits)
+    );
+  }
+
+  if (bucketKey === "withoutProposal") {
+    return (
+      !hasProposalScenario(scenario) &&
+      scenario.gaby.totalCredits >= Math.min(18, settings.gabyCredits) &&
+      scenario.gaby.selectedCodes.length >= 6 &&
+      scenario.jeff.totalCredits >= Math.min(12, settings.jeffCredits)
+    );
+  }
+
+  return true;
+}
+
+function bucketPreferenceScore(scenario, bucketKey, settings) {
+  if (bucketKey === "all") {
+    return scenario.score;
+  }
+
+  const targetMap = bucketKey === "withProposal"
+    ? {
+        gabyCredits: Math.min(15, settings.gabyCredits),
+        gabyCourses: 5,
+        jeffCredits: Math.min(12, settings.jeffCredits),
+        jeffCourses: 4,
+      }
+    : {
+        gabyCredits: Math.min(18, settings.gabyCredits),
+        gabyCourses: 6,
+        jeffCredits: Math.min(15, settings.jeffCredits),
+        jeffCourses: 5,
+      };
+
+  const creditPenalty =
+    Math.abs(scenario.gaby.totalCredits - targetMap.gabyCredits) * 7 +
+    Math.abs(scenario.jeff.totalCredits - targetMap.jeffCredits) * 5;
+  const coursePenalty =
+    Math.abs(scenario.gaby.selectedCodes.length - targetMap.gabyCourses) * 8 +
+    Math.abs(scenario.jeff.selectedCodes.length - targetMap.jeffCourses) * 5;
+  const overloadPenalty =
+    bucketKey === "withProposal"
+      ? Math.max(0, scenario.gaby.totalCredits - targetMap.gabyCredits) * 10 +
+        Math.max(0, scenario.jeff.totalCredits - targetMap.jeffCredits) * 7
+      : Math.max(0, targetMap.gabyCredits - scenario.gaby.totalCredits) * 9 +
+        Math.max(0, targetMap.jeffCredits - scenario.jeff.totalCredits) * 6;
+
+  return scenario.score - creditPenalty - coursePenalty - overloadPenalty;
 }
 
 function selectDiverseScenarios(scenarios, limit) {

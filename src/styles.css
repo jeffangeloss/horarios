@@ -345,6 +345,39 @@ select:focus {
   gap: 14px;
 }
 
+.scenario-groups {
+  display: grid;
+  gap: 18px;
+}
+
+.scenario-group-card {
+  display: grid;
+  gap: 14px;
+  padding: 20px;
+  border-radius: 24px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.scenario-group-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  gap: 16px;
+}
+
+.scenario-group-head h3 {
+  margin: 6px 0 8px;
+  font-size: 1.28rem;
+}
+
+.scenario-group-head p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.6;
+  max-width: 70ch;
+}
+
 .scenario-card {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
@@ -956,12 +989,14 @@ select:focus {
   .section-heading,
   .schedule-head,
   .spotlight-card,
-  .scenario-card {
+  .scenario-card,
+  .scenario-group-head {
     grid-template-columns: 1fr;
   }
 
   .section-heading,
-  .schedule-head {
+  .schedule-head,
+  .scenario-group-head {
     display: grid;
   }
 

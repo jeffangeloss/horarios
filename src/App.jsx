@@ -8,6 +8,7 @@ import {
   DEFAULT_SETTINGS,
   FOCUS_PROFILES,
   formatMeetings,
+  PROPOSAL_CODE,
   REQUIRED_GABY_CODES,
   solveScenarios,
   SOURCES,
@@ -31,19 +32,25 @@ const SCHEDULE_DIMENSIONS_STYLE = {
   "--day-header-height": `${DAY_HEADER_HEIGHT}px`,
   "--week-height": `${WEEK_HEIGHT}px`,
 };
+const EMPTY_SCENARIO_GROUPS = {
+  all: [],
+  withProposal: [],
+  withoutProposal: [],
+};
 
 export default function App() {
   const [form, setForm] = useState(DEFAULT_FORM);
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
-  const [scenarios, setScenarios] = useState([]);
+  const [scenarioGroups, setScenarioGroups] = useState(EMPTY_SCENARIO_GROUPS);
   const [selectedScenarioId, setSelectedScenarioId] = useState(null);
   const [isCalculating, setIsCalculating] = useState(true);
 
   useEffect(() => {
     setIsCalculating(true);
     const frameId = window.requestAnimationFrame(() => {
-      const nextScenarios = solveScenarios(settings);
-      setScenarios(nextScenarios);
+      const nextScenarioGroups = solveScenarios(settings);
+      const nextScenarios = flattenScenarioGroups(nextScenarioGroups);
+      setScenarioGroups(nextScenarioGroups);
       setSelectedScenarioId((currentId) => {
         if (nextScenarios.some((scenario) => scenario.id === currentId)) {
           return currentId;
@@ -56,8 +63,9 @@ export default function App() {
     return () => window.cancelAnimationFrame(frameId);
   }, [settings]);
 
-  const selectedScenario = scenarios.find((scenario) => scenario.id === selectedScenarioId) ?? null;
-  const bestScenario = scenarios[0] ?? null;
+  const scenarioPool = flattenScenarioGroups(scenarioGroups);
+  const selectedScenario = scenarioPool.find((scenario) => scenario.id === selectedScenarioId) ?? null;
+  const bestScenario = scenarioGroups.all[0] ?? scenarioPool[0] ?? null;
   const focusProfile = FOCUS_PROFILES[settings.focus];
 
   function handleFieldChange(event) {
@@ -103,7 +111,7 @@ export default function App() {
       <section className="overview-strip">
         <InfoCard
           title="Escenarios activos"
-          text={isCalculating ? "Recalculando..." : `${scenarios.length} alternativas visibles para comparar rapido.`}
+          text={isCalculating ? "Recalculando..." : `${scenarioPool.length} alternativas visibles entre con y sin tesis.`}
         />
         <InfoCard
           title="Enfoque actual"
@@ -228,52 +236,39 @@ export default function App() {
               <p>
                 {isCalculating
                   ? "Calculando escenarios..."
-                  : buildSummaryText(scenarios, settings)}
+                  : buildSummaryText(scenarioGroups, settings)}
               </p>
             </div>
             {bestScenario ? (
               <div className="heading-emphasis">
                 <strong>Top actual</strong>
                 <span>
-                  #{bestScenario.rank} | score {bestScenario.score.toFixed(1)}
+                  {bestScenario.bucketLabel} #{bestScenario.rank} | score {bestScenario.score.toFixed(1)}
                 </span>
               </div>
             ) : null}
           </div>
 
-          <div className="scenario-list">
+          <div className="scenario-groups">
             {isCalculating ? (
               <div className="loading">Calculando combinaciones validas y reordenando prioridades...</div>
-            ) : scenarios.length ? (
-              scenarios.map((scenario) => {
-                const hasSaturday = scenario.gaby.saturdayCount || scenario.jeff.saturdayCount;
-                const heavyLoad = scenario.gaby.totalDifficulty >= 16 || scenario.jeff.totalDifficulty >= 14;
-                return (
-                  <article
-                    key={scenario.id}
-                    className={`scenario-card ${scenario.id === selectedScenarioId ? "is-active" : ""}`}
-                    onClick={() => setSelectedScenarioId(scenario.id)}
-                  >
-                    <div className="scenario-rank">{scenario.rank}</div>
-                    <div>
-                      <div className="scenario-head">
-                        <div className="scenario-score">{scenario.score.toFixed(1)}</div>
-                        <div className="scenario-badges">
-                          <span className="badge">Gaby {scenario.gaby.totalCredits} cr</span>
-                          <span className="badge">Jeff {scenario.jeff.totalCredits} cr</span>
-                          <span className="badge">{scenario.sharedCodes.length} compartidos</span>
-                          <span className="badge">{scenario.sameSectionCodes.length} misma seccion</span>
-                        </div>
-                      </div>
-                      <p className="scenario-blurb">{scenario.reasons[0]}</p>
-                    </div>
-                    <div className="tag-row">
-                      {hasSaturday ? <span className="badge warn">Con sabado</span> : null}
-                      {heavyLoad ? <span className="badge rose">Carga exigente</span> : null}
-                    </div>
-                  </article>
-                );
-              })
+            ) : scenarioPool.length ? (
+              <>
+                <ScenarioGroup
+                  title="Con Propuesta (Tesis)"
+                  description="Aqui el simulador baja la carga ideal y evita sobrecargar el ciclo cuando entra tesis."
+                  scenarios={scenarioGroups.withProposal}
+                  selectedScenarioId={selectedScenarioId}
+                  onSelect={setSelectedScenarioId}
+                />
+                <ScenarioGroup
+                  title="Sin Propuesta"
+                  description="Aqui el simulador exige mas cursos para aprovechar el ciclo cuando tesis queda fuera."
+                  scenarios={scenarioGroups.withoutProposal}
+                  selectedScenarioId={selectedScenarioId}
+                  onSelect={setSelectedScenarioId}
+                />
+              </>
             ) : (
               <div className="loading">
                 No se encontraron escenarios validos con esos topes. Prueben subir creditos o quitar la misma seccion.
@@ -289,7 +284,7 @@ export default function App() {
               <h2>Detalle del escenario</h2>
               <p>
                 {selectedScenario
-                  ? `Escenario #${selectedScenario.rank}: ${selectedScenario.focusLabel}. Score ${selectedScenario.score.toFixed(1)}.`
+                  ? `${selectedScenario.bucketLabel} #${selectedScenario.rank}: ${selectedScenario.focusLabel}. Score ${selectedScenario.score.toFixed(1)}.`
                   : "Seleccionen un escenario para revisar cursos, horas y razones del puntaje."}
               </p>
             </div>
@@ -300,13 +295,16 @@ export default function App() {
               <article className="spotlight-card">
                 <div className="spotlight-main">
                   <p className="section-kicker">Resumen ejecutivo</p>
-                  <h3>Escenario #{selectedScenario.rank}</h3>
+                  <h3>{selectedScenario.bucketLabel} #{selectedScenario.rank}</h3>
                   <p>
                     {selectedScenario.reasons[0]} Gaby queda con {selectedScenario.gaby.totalCredits} creditos y Jeff con{" "}
                     {selectedScenario.jeff.totalCredits}.
                   </p>
                 </div>
                 <div className="spotlight-side">
+                  <span className={`badge ${selectedScenario.gaby.selectedCodes.includes(PROPOSAL_CODE) ? "" : "warn"}`}>
+                    {selectedScenario.gaby.selectedCodes.includes(PROPOSAL_CODE) ? "Con tesis" : "Sin tesis"}
+                  </span>
                   <span className="badge">Score {selectedScenario.score.toFixed(1)}</span>
                   <span className="badge">{selectedScenario.sharedCodes.length} compartidos</span>
                   <span className={`badge ${selectedScenario.sameSectionCodes.length ? "" : "warn"}`}>
@@ -633,6 +631,57 @@ function InfoCard({ title, text }) {
   );
 }
 
+function ScenarioGroup({ title, description, scenarios, selectedScenarioId, onSelect }) {
+  return (
+    <section className="scenario-group-card">
+      <header className="scenario-group-head">
+        <div>
+          <p className="section-kicker">Bloque de simulacion</p>
+          <h3>{title}</h3>
+          <p>{description}</p>
+        </div>
+        <span className="badge">{scenarios.length} escenario(s)</span>
+      </header>
+
+      {scenarios.length ? (
+        <div className="scenario-list">
+          {scenarios.map((scenario) => {
+            const hasSaturday = scenario.gaby.saturdayCount || scenario.jeff.saturdayCount;
+            const heavyLoad = scenario.gaby.totalDifficulty >= 16 || scenario.jeff.totalDifficulty >= 14;
+            return (
+              <article
+                key={scenario.id}
+                className={`scenario-card ${scenario.id === selectedScenarioId ? "is-active" : ""}`}
+                onClick={() => onSelect(scenario.id)}
+              >
+                <div className="scenario-rank">{scenario.rank}</div>
+                <div>
+                  <div className="scenario-head">
+                    <div className="scenario-score">{scenario.score.toFixed(1)}</div>
+                    <div className="scenario-badges">
+                      <span className="badge">Gaby {scenario.gaby.totalCredits} cr</span>
+                      <span className="badge">Jeff {scenario.jeff.totalCredits} cr</span>
+                      <span className="badge">{scenario.sharedCodes.length} compartidos</span>
+                      <span className="badge">{scenario.sameSectionCodes.length} misma seccion</span>
+                    </div>
+                  </div>
+                  <p className="scenario-blurb">{scenario.reasons[0]}</p>
+                </div>
+                <div className="tag-row">
+                  {hasSaturday ? <span className="badge warn">Con sabado</span> : null}
+                  {heavyLoad ? <span className="badge rose">Carga exigente</span> : null}
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="loading">No salieron alternativas validas en este bloque con los topes actuales.</div>
+      )}
+    </section>
+  );
+}
+
 function formatDayList(days) {
   return days.map((day) => DAY_NAME_BY_CODE[day] ?? day).join(", ");
 }
@@ -668,16 +717,21 @@ function collectCourseProfessors(course) {
   return unique(course.sections.map((section) => section.professor));
 }
 
-function buildSummaryText(scenarios, settings) {
-  if (!scenarios.length) {
+function buildSummaryText(groups, settings) {
+  const total = flattenScenarioGroups(groups).length;
+  if (!total) {
     return "No se encontraron escenarios validos con esos topes de creditos.";
   }
 
-  const best = scenarios[0];
+  const best = groups.all[0] ?? groups.withProposal[0] ?? groups.withoutProposal[0];
   const profile = FOCUS_PROFILES[settings.focus];
-  return `Se encontraron ${scenarios.length} escenarios top para ${profile.label.toLowerCase()}. El mejor deja a Gaby con ${best.gaby.totalCredits} creditos y a Jeff con ${best.jeff.totalCredits}.`;
+  return `Se encontraron ${groups.withProposal.length} escenarios con tesis y ${groups.withoutProposal.length} sin tesis para ${profile.label.toLowerCase()}. El mejor deja a Gaby con ${best.gaby.totalCredits} creditos y a Jeff con ${best.jeff.totalCredits}.`;
 }
 
 function unique(values) {
   return [...new Set(values)];
+}
+
+function flattenScenarioGroups(groups) {
+  return [...groups.withProposal, ...groups.withoutProposal];
 }
