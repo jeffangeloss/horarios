@@ -1,24 +1,21 @@
 import { useEffect, useState } from "react";
 import {
-  buildCourseStrategy,
   COLOR_PALETTE,
   COURSES,
   DAY_LABELS,
   DAYS,
-  DEFAULT_SETTINGS,
-  FOCUS_PROFILES,
   formatMeetings,
-  PROPOSAL_CODE,
-  REQUIRED_GABY_CODES,
-  solveScenarios,
+  JEFF_DEFAULT_SETTINGS,
+  JEFF_FOCUS_PROFILES,
+  JEFF_PROFILE,
+  solveJeffPlans,
   SOURCES,
 } from "./lib/scheduler.js";
 
-const DEFAULT_FORM = {
-  gabyCredits: String(DEFAULT_SETTINGS.gabyCredits),
-  jeffCredits: String(DEFAULT_SETTINGS.jeffCredits),
-  focus: DEFAULT_SETTINGS.focus,
-  sameSection: DEFAULT_SETTINGS.sameSection,
+const ADMIN_PIN = "171103";
+const DEFAULT_ADMIN_FORM = {
+  maxCredits: String(JEFF_DEFAULT_SETTINGS.maxCredits),
+  focus: JEFF_DEFAULT_SETTINGS.focus,
 };
 const DAY_NAME_BY_CODE = Object.fromEntries(DAYS.map((day, index) => [day, DAY_LABELS[index]]));
 const START_HOUR = 7;
@@ -32,30 +29,33 @@ const SCHEDULE_DIMENSIONS_STYLE = {
   "--day-header-height": `${DAY_HEADER_HEIGHT}px`,
   "--week-height": `${WEEK_HEIGHT}px`,
 };
-const EMPTY_SCENARIO_GROUPS = {
-  all: [],
-  withProposal: [],
-  withoutProposal: [],
-};
+const INITIAL_PLANNER = solveJeffPlans(JEFF_DEFAULT_SETTINGS);
 
 export default function App() {
-  const [form, setForm] = useState(DEFAULT_FORM);
-  const [settings, setSettings] = useState(DEFAULT_SETTINGS);
-  const [scenarioGroups, setScenarioGroups] = useState(EMPTY_SCENARIO_GROUPS);
-  const [selectedScenarioId, setSelectedScenarioId] = useState(null);
-  const [isCalculating, setIsCalculating] = useState(true);
+  const [settings, setSettings] = useState(JEFF_DEFAULT_SETTINGS);
+  const [planner, setPlanner] = useState(INITIAL_PLANNER);
+  const [selectedPlanId, setSelectedPlanId] = useState(INITIAL_PLANNER.bestPlan?.id ?? null);
+  const [isCalculating, setIsCalculating] = useState(false);
+  const [isAdminOpen, setIsAdminOpen] = useState(false);
+  const [isAdminUnlocked, setIsAdminUnlocked] = useState(false);
+  const [adminKey, setAdminKey] = useState("");
+  const [adminError, setAdminError] = useState("");
+  const [adminForm, setAdminForm] = useState(DEFAULT_ADMIN_FORM);
 
   useEffect(() => {
     setIsCalculating(true);
     const frameId = window.requestAnimationFrame(() => {
-      const nextScenarioGroups = solveScenarios(settings);
-      const nextScenarios = flattenScenarioGroups(nextScenarioGroups);
-      setScenarioGroups(nextScenarioGroups);
-      setSelectedScenarioId((currentId) => {
-        if (nextScenarios.some((scenario) => scenario.id === currentId)) {
+      const nextPlanner = solveJeffPlans(settings);
+      setPlanner(nextPlanner);
+      setSelectedPlanId((currentId) => {
+        if (nextPlanner.plans.some((plan) => plan.id === currentId)) {
           return currentId;
         }
-        return nextScenarios[0]?.id ?? null;
+        return nextPlanner.bestPlan?.id ?? null;
+      });
+      setAdminForm({
+        maxCredits: String(settings.maxCredits),
+        focus: settings.focus,
       });
       setIsCalculating(false);
     });
@@ -63,507 +63,439 @@ export default function App() {
     return () => window.cancelAnimationFrame(frameId);
   }, [settings]);
 
-  const scenarioPool = flattenScenarioGroups(scenarioGroups);
-  const selectedScenario = scenarioPool.find((scenario) => scenario.id === selectedScenarioId) ?? null;
-  const bestScenario = scenarioGroups.all[0] ?? scenarioPool[0] ?? null;
-  const focusProfile = FOCUS_PROFILES[settings.focus];
+  const selectedPlan = planner.plans.find((plan) => plan.id === selectedPlanId) ?? planner.bestPlan ?? null;
+  const focusProfile = JEFF_FOCUS_PROFILES[settings.focus];
 
-  function handleFieldChange(event) {
-    const { name, type, value, checked } = event.target;
-    setForm((currentForm) => ({
+  function handleUnlock(event) {
+    event.preventDefault();
+    if (adminKey.trim() === ADMIN_PIN) {
+      setIsAdminUnlocked(true);
+      setAdminError("");
+      setAdminKey("");
+      return;
+    }
+
+    setAdminError("Clave incorrecta.");
+  }
+
+  function handleAdminFieldChange(event) {
+    const { name, value } = event.target;
+    setAdminForm((currentForm) => ({
       ...currentForm,
-      [name]: type === "checkbox" ? checked : value,
+      [name]: value,
     }));
   }
 
-  function handleSubmit(event) {
+  function handleAdminApply(event) {
     event.preventDefault();
     setSettings({
-      gabyCredits: Number(form.gabyCredits),
-      jeffCredits: Number(form.jeffCredits),
-      focus: form.focus,
-      sameSection: form.sameSection,
+      maxCredits: Number(adminForm.maxCredits),
+      focus: adminForm.focus,
     });
   }
 
   return (
-    <div className="page-shell">
-      <header className="hero">
+    <div className="app-shell">
+      <div className="ambient ambient-a"></div>
+      <div className="ambient ambient-b"></div>
+      <div className="ambient ambient-c"></div>
+
+      <button
+        type="button"
+        className="cat-admin-button"
+        aria-label="Abrir admin de Jeff"
+        onClick={() => setIsAdminOpen(true)}
+      >
+        🐱
+      </button>
+
+      <header className="hero-card panel">
         <div className="hero-copy">
-          <p className="eyebrow">React + Vite | Horarios 2026-1 cruzados con plan, silabos y rutas</p>
-          <h1>Simulador de horarios para Gaby y Jeff</h1>
+          <p className="eyebrow">Jeff only | ciclo {JEFF_PROFILE.cycle} | dark planner</p>
+          <h1>Plan maestro para Jeff: mas certificados, mejor ritmo y un ciclo con sabor tecnico.</h1>
           <p className="hero-text">
-            El ranking usa los horarios oficiales, los silabos, el plan de estudios, las certificaciones
-            parciales y los diplomas de especialidad. Jeff nunca adelanta un curso que Gaby no lleve.
+            {planner.summary} Jeff ya llega con IoT y Sistemas Distribuidos como base ganada, asi que este tablero
+            empuja lo que mas conviene sumar ahora y evita meter ruido que no cierre valor.
           </p>
+
+          <div className="hero-tags">
+            <span className="pill primary">{focusProfile.label}</span>
+            <span className="pill">{selectedPlan ? `${selectedPlan.schedule.totalCredits} creditos recomendados` : "Sin plan"}</span>
+            <span className="pill">{selectedPlan ? `${selectedPlan.newCertifications.length} certificados nuevos` : "0 certificados"}</span>
+            <span className="pill">{selectedPlan ? `${selectedPlan.schedule.activeDays.length} dias activos` : "0 dias"}</span>
+          </div>
         </div>
 
-        <div className="hero-panel">
-          <div className="hero-chip">Regla fija: Jeff subset de Gaby</div>
-          <div className="hero-chip">Gaby fija: Gestion de Operaciones + Ing. Software I</div>
-          <div className="hero-chip">Software I: evitar Irey Nunez</div>
-          <div className="hero-chip">Jueves: bloques virtuales</div>
-          <div className="hero-chip">Base: CIS_HORARIOS_2026-1</div>
-          <div className="hero-chip">Prioridad: obligatorios y menor nivel</div>
-        </div>
+        <aside className="hero-side">
+          <div className="hero-side-block">
+            <p className="section-kicker">Base ya ganada</p>
+            <h2>{JEFF_PROFILE.completedElectives.length} electivos ya resueltos</h2>
+            <p>{JEFF_PROFILE.mission}</p>
+          </div>
+
+          <div className="completed-list">
+            {planner.completedElectives.map((course) => (
+              <article key={course.id} className="completed-card">
+                <strong>{course.name}</strong>
+                <span>{course.kind}</span>
+                <p>{course.summary}</p>
+              </article>
+            ))}
+          </div>
+        </aside>
       </header>
 
-      <section className="overview-strip">
+      <section className="metrics-strip">
         <InfoCard
-          title="Escenarios activos"
-          text={isCalculating ? "Recalculando..." : `${scenarioPool.length} alternativas visibles entre con y sin tesis.`}
+          title="Plan top"
+          text={selectedPlan ? `${selectedPlan.headline}. Score ${selectedPlan.score.toFixed(1)}.` : "Esperando resultados."}
         />
         <InfoCard
-          title="Enfoque actual"
-          text={`${focusProfile.label}. ${focusProfile.description}`}
+          title="Carga sugerida"
+          text={selectedPlan ? `${selectedPlan.schedule.totalCredits} cr | dificultad ${selectedPlan.schedule.totalDifficulty}/25 | ${selectedPlan.paceLabel.toLowerCase()}.` : "Sin plan activo."}
         />
         <InfoCard
-          title="Cursos fijos de Gaby"
-          text="Gestion de Operaciones e Ingenieria de Software I siempre quedan dentro del escenario."
-        />
-        <InfoCard
-          title="Recomendacion top"
+          title="Certificados"
           text={
-            bestScenario
-              ? `Gaby ${bestScenario.gaby.totalCredits} cr y Jeff ${bestScenario.jeff.totalCredits} cr con score ${bestScenario.score.toFixed(1)}.`
-              : "Esperando calculo inicial."
+            selectedPlan
+              ? selectedPlan.newCertifications.length
+                ? `Nuevos: ${selectedPlan.newCertifications.join(", ")}.`
+                : `Jeff conserva ${planner.completedCertifications.join(", ")} y este plan no repite certificados.`
+              : "Sin lectura aun."
+          }
+        />
+        <InfoCard
+          title="Ritmo semanal"
+          text={
+            selectedPlan
+              ? `${selectedPlan.schedule.activeDays.length} dias | ${selectedPlan.schedule.gapHours} h de huecos | ${selectedPlan.schedule.saturdayCount ? "con sabado" : "sin sabado"}.`
+              : "Sin horario."
           }
         />
       </section>
 
-      <main className="layout">
-        <section className="card controls-card">
+      <main className="dashboard-grid">
+        <section className="panel spotlight-panel">
           <div className="section-heading">
             <div>
-              <h2>Parametros</h2>
-              <p>Cambien topes o enfoque y recalculen el ranking.</p>
-            </div>
-          </div>
-
-          <form className="controls-grid" onSubmit={handleSubmit}>
-            <label>
-              <span>Max creditos Gaby</span>
-              <input
-                id="gaby-credits"
-                name="gabyCredits"
-                type="number"
-                min="9"
-                max="24"
-                step="1"
-                value={form.gabyCredits}
-                onChange={handleFieldChange}
-              />
-            </label>
-
-            <label>
-              <span>Max creditos Jeff</span>
-              <input
-                id="jeff-credits"
-                name="jeffCredits"
-                type="number"
-                min="9"
-                max="24"
-                step="1"
-                value={form.jeffCredits}
-                onChange={handleFieldChange}
-              />
-            </label>
-
-            <label>
-              <span>Enfoque</span>
-              <select id="focus-mode" name="focus" value={form.focus} onChange={handleFieldChange}>
-                {Object.entries(FOCUS_PROFILES).map(([key, profile]) => (
-                  <option key={key} value={key}>
-                    {profile.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="checkbox-row">
-              <input
-                id="same-section"
-                name="sameSection"
-                type="checkbox"
-                checked={form.sameSection}
-                onChange={handleFieldChange}
-              />
-              <span>Si ambos llevan un curso, intentar misma seccion</span>
-            </label>
-
-            <button className="primary-button" type="submit">
-              Recalcular simulacion
-            </button>
-          </form>
-
-          <div className="focus-spotlight">
-            <p className="section-kicker">Lectura rapida</p>
-            <h3>{focusProfile.label}</h3>
-            <p>{focusProfile.description}</p>
-            <div className="pill-stack">
-              <span className="tag rose">Gaby fija: 650019 y 650063</span>
-              <span className="tag rose">Software I evita a Irey Nunez</span>
-              <span className="tag">Jeff nunca adelanta a Gaby</span>
-              <span className="tag warn">Comparacion por score + carga + rutas</span>
-            </div>
-          </div>
-
-          <div className="criteria-grid">
-            <InfoCard
-              title="Cursos fijos de Gaby"
-              text="Todas las simulaciones incluyen Gestion de Operaciones e Ingenieria de Software I."
-            />
-            <InfoCard
-              title="Orden del plan"
-              text="Mas puntos para obligatorios y menor nivel, siguiendo la recomendacion de DUSAR y el plan 2026-1."
-            />
-            <InfoCard
-              title="Carga real"
-              text="Ahora tambien pesa mas Propuesta de Investigacion; los jueves cuentan como virtuales y, para Gaby, se favorecen noches compactas."
-            />
-            <InfoCard
-              title="Rutas futuras"
-              text={focusProfile.description}
-            />
-          </div>
-        </section>
-
-        <section className="card results-card">
-          <div className="section-heading">
-            <div>
-              <p className="section-kicker">Ranking priorizado</p>
-              <h2>Mejores escenarios</h2>
+              <p className="section-kicker">Plan recomendado</p>
+              <h2>{selectedPlan ? selectedPlan.headline : "Sin combinaciones validas"}</h2>
               <p>
-                {isCalculating
-                  ? "Calculando escenarios..."
-                  : buildSummaryText(scenarioGroups, settings)}
+                {selectedPlan
+                  ? selectedPlan.reasons[0]
+                  : "Sube el tope de creditos desde admin para reabrir alternativas."}
               </p>
             </div>
-            {bestScenario ? (
-              <div className="heading-emphasis">
-                <strong>Top actual</strong>
-                <span>
-                  {bestScenario.bucketLabel} #{bestScenario.rank} | score {bestScenario.score.toFixed(1)}
-                </span>
+
+            {selectedPlan ? (
+              <div className="spotlight-score">
+                <strong>Score</strong>
+                <span>{selectedPlan.score.toFixed(1)}</span>
               </div>
             ) : null}
           </div>
 
-          <div className="scenario-groups">
-            {isCalculating ? (
-              <div className="loading">Calculando combinaciones validas y reordenando prioridades...</div>
-            ) : scenarioPool.length ? (
-              <>
-                <ScenarioGroup
-                  title="Con Propuesta (Tesis)"
-                  description="Aqui el simulador baja la carga ideal y evita sobrecargar el ciclo cuando entra tesis."
-                  scenarios={scenarioGroups.withProposal}
-                  selectedScenarioId={selectedScenarioId}
-                  onSelect={setSelectedScenarioId}
-                />
-                <ScenarioGroup
-                  title="Sin Propuesta"
-                  description="Aqui el simulador exige mas cursos para aprovechar el ciclo cuando tesis queda fuera."
-                  scenarios={scenarioGroups.withoutProposal}
-                  selectedScenarioId={selectedScenarioId}
-                  onSelect={setSelectedScenarioId}
-                />
-              </>
-            ) : (
-              <div className="loading">
-                No se encontraron escenarios validos con esos topes. Prueben subir creditos o quitar la misma seccion.
-              </div>
-            )}
-          </div>
-        </section>
-
-        <section className="card detail-card">
-          <div className="section-heading">
-            <div>
-              <p className="section-kicker">Escenario seleccionado</p>
-              <h2>Detalle del escenario</h2>
-              <p>
-                {selectedScenario
-                  ? `${selectedScenario.bucketLabel} #${selectedScenario.rank}: ${selectedScenario.focusLabel}. Score ${selectedScenario.score.toFixed(1)}.`
-                  : "Seleccionen un escenario para revisar cursos, horas y razones del puntaje."}
-              </p>
-            </div>
-          </div>
-
-          {selectedScenario ? (
-            <div className="detail-grid">
-              <article className="spotlight-card">
-                <div className="spotlight-main">
-                  <p className="section-kicker">Resumen ejecutivo</p>
-                  <h3>{selectedScenario.bucketLabel} #{selectedScenario.rank}</h3>
-                  <p>
-                    {selectedScenario.reasons[0]} Gaby queda con {selectedScenario.gaby.totalCredits} creditos y Jeff con{" "}
-                    {selectedScenario.jeff.totalCredits}.
-                  </p>
-                </div>
-                <div className="spotlight-side">
-                  <span className={`badge ${selectedScenario.gaby.selectedCodes.includes(PROPOSAL_CODE) ? "" : "warn"}`}>
-                    {selectedScenario.gaby.selectedCodes.includes(PROPOSAL_CODE) ? "Con tesis" : "Sin tesis"}
-                  </span>
-                  <span className="badge">Score {selectedScenario.score.toFixed(1)}</span>
-                  <span className="badge">{selectedScenario.sharedCodes.length} compartidos</span>
-                  <span className={`badge ${selectedScenario.sameSectionCodes.length ? "" : "warn"}`}>
-                    {selectedScenario.sameSectionCodes.length} misma seccion
-                  </span>
-                </div>
-              </article>
-
-              <div className="detail-top">
+          {selectedPlan ? (
+            <div className="spotlight-body">
+              <div className="summary-grid">
                 <InfoCard
-                  title="Carga de Gaby"
-                  text={`${selectedScenario.gaby.totalCredits} creditos | dificultad ${selectedScenario.gaby.totalDifficulty}/25`}
+                  title="Bloque central"
+                  text={`${selectedPlan.schedule.selectedCodes.length} curso(s) | ${selectedPlan.schedule.totalCredits} creditos | ${selectedPlan.schedule.activeDays.length} dias.`}
                 />
                 <InfoCard
-                  title="Carga de Jeff"
-                  text={`${selectedScenario.jeff.totalCredits} creditos | dificultad ${selectedScenario.jeff.totalDifficulty}/25`}
+                  title="Obligatorios"
+                  text={
+                    selectedPlan.requiredCodes.length
+                      ? selectedPlan.requiredCodes.map((code) => courseShortName(code)).join(", ")
+                      : "No mete obligatorios en esta variante."
+                  }
                 />
                 <InfoCard
-                  title="Coincidencia"
-                  text={`${selectedScenario.sharedCodes.length} compartidos | ${selectedScenario.sameSectionCodes.length} misma seccion`}
+                  title="Nuevos certificados"
+                  text={
+                    selectedPlan.newCertifications.length
+                      ? selectedPlan.newCertifications.join(", ")
+                      : "No abre certificados nuevos en esta variante."
+                  }
                 />
                 <InfoCard
-                  title="Preferencia de Gaby"
-                  text={`${selectedScenario.gaby.nightHours} h noche | ${selectedScenario.gaby.stackedDays} dia(s) seguidos | remoto eq ${selectedScenario.gaby.remoteBurden.toFixed(2)}`}
+                  title="Rutas vivas"
+                  text={
+                    selectedPlan.combinedDiplomas.length
+                      ? selectedPlan.combinedDiplomas.join(", ")
+                      : "Sin rutas extra detectadas."
+                  }
                 />
               </div>
 
-              <div className="people-grid">
-                <section className="person-panel person-panel-gaby">
-                  {renderPersonStack("Gaby", selectedScenario.gaby, "gaby")}
-                </section>
-                <section className="person-panel person-panel-jeff">
-                  {renderPersonStack("Jeff", selectedScenario.jeff, "jeff")}
-                </section>
-              </div>
-
-              <div className="detail-columns">
-                <div>
-                  <p className="section-kicker">Explicacion del score</p>
-                  <h3>Por que subio en el ranking</h3>
+              <div className="spotlight-columns">
+                <div className="reason-box">
+                  <p className="section-kicker">Por que conviene</p>
+                  <h3>Lectura estrategica</h3>
                   <ul className="reason-list">
-                    {selectedScenario.reasons.map((reason) => (
+                    {selectedPlan.reasons.map((reason) => (
                       <li key={reason}>{reason}</li>
                     ))}
                   </ul>
                 </div>
 
-                <div>
-                  <p className="section-kicker">Impacto curricular</p>
-                  <h3>Rutas y desbloqueos</h3>
-                  <div className="route-grid">
-                    <InfoCard
-                      title="Jeff no adelanta a Gaby"
-                      text={`Jeff lleva ${selectedScenario.jeff.selectedCodes.length} curso(s), todos incluidos dentro de los ${selectedScenario.gaby.selectedCodes.length} que tambien lleva Gaby.`}
-                    />
-                    <InfoCard
-                      title="Cursos fijos de Gaby"
-                      text="Gestion de Operaciones e Ingenieria de Software I estan fijados como obligatorios duros."
-                    />
-                    {selectedScenario.gaby.unlocks.length ? (
-                      <InfoCard
-                        title="Desbloqueos de Gaby"
-                        text={`Abre o empuja: ${selectedScenario.gaby.unlocks.join(", ")}.`}
-                      />
-                    ) : null}
-                    {selectedScenario.jeff.unlocks.length ? (
-                      <InfoCard
-                        title="Desbloqueos de Jeff"
-                        text={`Abre o empuja: ${selectedScenario.jeff.unlocks.join(", ")}.`}
-                      />
-                    ) : null}
-                    {unique([...selectedScenario.gaby.certifications, ...selectedScenario.jeff.certifications]).length ? (
-                      <InfoCard
-                        title="Certificaciones parciales"
-                        text={`Suman valor para: ${unique([
-                          ...selectedScenario.gaby.certifications,
-                          ...selectedScenario.jeff.certifications,
-                        ]).join(", ")}.`}
-                      />
-                    ) : null}
-                    {unique([...selectedScenario.gaby.diplomas, ...selectedScenario.jeff.diplomas]).length ? (
-                      <InfoCard
-                        title="Diplomas de especialidad"
-                        text={`Aportan a: ${unique([
-                          ...selectedScenario.gaby.diplomas,
-                          ...selectedScenario.jeff.diplomas,
-                        ]).join(", ")}.`}
-                      />
-                    ) : null}
+                <div className="course-box">
+                  <p className="section-kicker">Bloque del ciclo</p>
+                  <h3>Materias del plan</h3>
+                  <div className="course-grid">
+                    {selectedPlan.schedule.selectedCodes.map((code) => (
+                      <JeffCourseCard key={`${code}-${selectedPlan.schedule.selection[code]}`} code={code} schedule={selectedPlan.schedule} />
+                    ))}
                   </div>
                 </div>
               </div>
-
-              <div className="schedule-panels">
-                <WeekBoard title="Horario de Gaby" schedule={selectedScenario.gaby} personKey="gaby" />
-                <WeekBoard title="Horario de Jeff" schedule={selectedScenario.jeff} personKey="jeff" />
-              </div>
             </div>
-          ) : null}
+          ) : (
+            <div className="empty-state">No hay planes disponibles con la configuracion actual.</div>
+          )}
         </section>
 
-        <section className="card analysis-card">
+        <section className="panel alternatives-panel">
           <div className="section-heading">
             <div>
-              <p className="section-kicker">Mapa del ciclo</p>
-              <h2>Lectura academica del ciclo</h2>
-              <p>Esta matriz resume que tan pesado o estrategico es cada curso segun horas, plan, certificaciones y diplomas.</p>
+              <p className="section-kicker">Ranking de Jeff</p>
+              <h2>Alternativas visibles</h2>
+              <p>{isCalculating ? "Recalculando prioridades..." : "Selecciona una variante para comparar el plan."}</p>
             </div>
           </div>
 
-          <div className="course-catalog">
-            {COURSES.slice()
-              .sort((left, right) => left.level - right.level || left.name.localeCompare(right.name))
-              .map((course) => (
-                <article key={course.code} className="catalog-card">
-                  <header>
-                    <div>
-                      <h3>{course.name}</h3>
-                      <p>
-                        {course.code} | nivel {course.level} | {course.credits} creditos
-                      </p>
-                    </div>
-                    <span className="badge">{course.difficultyLabel}</span>
-                  </header>
-                  <p>{course.difficultyReason}</p>
-                  <p>
-                    <strong>Profesores:</strong> {collectCourseProfessors(course).join(", ")}.
-                  </p>
-                  <p>
-                    <strong>Valor estrategico:</strong> {buildCourseStrategy(course)}
-                  </p>
-                  <div className="tag-row">
-                    <span className={`tag ${course.kind === "required" ? "" : "warn"}`}>
-                      {course.kind === "required" ? "Obligatorio" : "Electivo"}
-                    </span>
-                    <span className={`tag ${course.availableFor.length === 2 ? "" : "rose"}`}>
-                      {course.availableFor.length === 2 ? "Lo pueden llevar ambos" : "Solo Gaby"}
-                    </span>
-                    {REQUIRED_GABY_CODES.includes(course.code) ? <span className="tag rose">Fijo para Gaby</span> : null}
-                    {course.certifications.length ? <span className="tag">Certificaciones: {course.certifications.length}</span> : null}
-                    {course.diplomas.length ? <span className="tag">Diplomas: {course.diplomas.length}</span> : null}
+          <div className="plan-list">
+            {planner.plans.map((plan) => (
+              <button
+                key={plan.id}
+                type="button"
+                className={`plan-option ${plan.id === selectedPlanId ? "is-active" : ""}`}
+                onClick={() => setSelectedPlanId(plan.id)}
+              >
+                <div className="plan-option-head">
+                  <div className="plan-rank">{plan.rank}</div>
+                  <div>
+                    <strong>{plan.headline}</strong>
+                    <p>{plan.reasons[0]}</p>
                   </div>
-                </article>
-              ))}
+                </div>
+
+                <div className="plan-option-tags">
+                  <span className="pill">{plan.schedule.totalCredits} cr</span>
+                  <span className="pill">{plan.schedule.activeDays.length} dias</span>
+                  <span className="pill">{plan.paceLabel}</span>
+                  <span className={`pill ${plan.newCertifications.length ? "success" : ""}`}>
+                    {plan.newCertifications.length ? `${plan.newCertifications.length} cert.` : "Sin cert."}
+                  </span>
+                </div>
+              </button>
+            ))}
           </div>
         </section>
 
-        <section className="card sources-card">
+        <section className="panel radar-panel">
+          <div className="section-heading">
+            <div>
+              <p className="section-kicker">Radar curricular</p>
+              <h2>Jeff y sus certificados</h2>
+              <p>
+                La idea del ciclo es no desperdiciar que Jeff ya trae una base tecnica. El ranking busca sumar lo que
+                de verdad amplie sus certificados y no solo llenar creditos.
+              </p>
+            </div>
+          </div>
+
+          <div className="radar-grid">
+            <article className="radar-card">
+              <strong>Ya asegurado</strong>
+              <p>{planner.completedCertifications.length ? planner.completedCertifications.join(", ") : "Sin certificados previos cargados."}</p>
+            </article>
+            <article className="radar-card">
+              <strong>Objetivo de este ciclo</strong>
+              <p>
+                {selectedPlan?.newCertifications.length
+                  ? selectedPlan.newCertifications.join(", ")
+                  : "Priorizar obligatorios y tecnicos sin repetir valor de certificado."}
+              </p>
+            </article>
+            <article className="radar-card">
+              <strong>Desbloqueos</strong>
+              <p>
+                {selectedPlan?.schedule.unlocks.length
+                  ? selectedPlan.schedule.unlocks.join(", ")
+                  : "Sin desbloqueos adicionales en la variante elegida."}
+              </p>
+            </article>
+            <article className="radar-card">
+              <strong>Diplomas activos</strong>
+              <p>
+                {selectedPlan?.combinedDiplomas.length
+                  ? selectedPlan.combinedDiplomas.join(", ")
+                  : "Sin diplomas activos detectados."}
+              </p>
+            </article>
+          </div>
+        </section>
+
+        <section className="panel board-panel">
+          <div className="section-heading">
+            <div>
+              <p className="section-kicker">Horario de Jeff</p>
+              <h2>Lectura semanal</h2>
+              <p>
+                {selectedPlan
+                  ? `${selectedPlan.schedule.meetings.length} bloques, ${selectedPlan.schedule.gapHours} horas de huecos y ${selectedPlan.schedule.remoteSessions} sesiones remotas equivalentes.`
+                  : "Sin horario para mostrar."}
+              </p>
+            </div>
+          </div>
+
+          {selectedPlan ? <WeekBoard schedule={selectedPlan.schedule} /> : null}
+        </section>
+
+        <section className="panel sources-panel">
           <div className="section-heading">
             <div>
               <p className="section-kicker">Trazabilidad</p>
-              <h2>Fuentes consideradas</h2>
-              <p>El simulador cruza todos los PDFs relevantes de la carpeta, no una sola tabla.</p>
+              <h2>Fuentes que sostienen el tablero</h2>
+              <p>El diseno cambio, pero la base sigue cruzando horarios, plan, certificaciones, diplomas y silabos.</p>
             </div>
           </div>
 
           <div className="sources-grid">
             {SOURCES.map((source) => (
-              <InfoCard key={source.title} title={source.title} text={source.summary} />
+              <article key={source.title} className="source-card">
+                <strong>{source.title}</strong>
+                <p>{source.summary}</p>
+              </article>
             ))}
           </div>
         </section>
       </main>
+
+      {isAdminOpen ? (
+        <div className="admin-overlay" role="presentation" onClick={() => setIsAdminOpen(false)}>
+          <aside className="admin-drawer" onClick={(event) => event.stopPropagation()}>
+            <button type="button" className="admin-close" onClick={() => setIsAdminOpen(false)} aria-label="Cerrar panel">
+              x
+            </button>
+
+            {!isAdminUnlocked ? (
+              <form className="admin-lock" onSubmit={handleUnlock}>
+                <p className="section-kicker">Admin Jeff</p>
+                <h2>Acceso reservado</h2>
+                <p>Este panel recalibra el plan de Jeff sin mostrar la clave dentro del sitio.</p>
+
+                <label>
+                  <span>Clave</span>
+                  <input type="password" value={adminKey} onChange={(event) => setAdminKey(event.target.value)} />
+                </label>
+
+                {adminError ? <p className="inline-error">{adminError}</p> : null}
+
+                <button className="primary-button" type="submit">
+                  Entrar
+                </button>
+              </form>
+            ) : (
+              <form className="admin-form" onSubmit={handleAdminApply}>
+                <p className="section-kicker">Admin Jeff</p>
+                <h2>Calibrar el ranking</h2>
+                <p>Aqui solo se ajusta el plan de Jeff: creditos maximos y enfoque de priorizacion.</p>
+
+                <label>
+                  <span>Max creditos</span>
+                  <input
+                    name="maxCredits"
+                    type="number"
+                    min="12"
+                    max="21"
+                    step="1"
+                    value={adminForm.maxCredits}
+                    onChange={handleAdminFieldChange}
+                  />
+                </label>
+
+                <label>
+                  <span>Modo</span>
+                  <select name="focus" value={adminForm.focus} onChange={handleAdminFieldChange}>
+                    {Object.entries(JEFF_FOCUS_PROFILES).map(([key, profile]) => (
+                      <option key={key} value={key}>
+                        {profile.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <article className="admin-note">
+                  <strong>Lectura actual</strong>
+                  <p>{planner.summary}</p>
+                </article>
+
+                <button className="primary-button" type="submit">
+                  Recalcular plan
+                </button>
+              </form>
+            )}
+          </aside>
+        </div>
+      ) : null}
     </div>
   );
 }
 
-function renderPersonStack(personLabel, schedule, personKey) {
-  return (
-    <>
-      <article className={`course-card summary-card summary-card-${personKey}`}>
-        <header>
-          <div>
-            <p className="person-eyebrow">{personKey === "gaby" ? "Ruta principal" : "Ruta alineada"}</p>
-            <h3>{personLabel}</h3>
-            <p>
-              {schedule.selectedCodes.length} curso(s) | huecos {schedule.gapHours} h | remoto eq{" "}
-              {schedule.remoteBurden.toFixed(2)}
-            </p>
-          </div>
-        </header>
-        <div className="tag-row">
-          <span className="badge">{schedule.totalCredits} creditos</span>
-          <span className="badge">{schedule.activeDays.length} dias</span>
-          <span className={`badge ${schedule.saturdayCount ? "warn" : ""}`}>
-            {schedule.saturdayCount ? "Sabado" : "Sin sabado"}
-          </span>
-          <span className={`badge ${schedule.nightHours ? "rose" : ""}`}>
-            {schedule.nightHours ? `${schedule.nightHours} h noche` : "Sin noche"}
-          </span>
-          <span className={`badge ${schedule.remoteSessions ? "warn" : ""}`}>
-            {schedule.remoteSessions ? `${schedule.remoteSessions} remoto(s)` : "Sin remoto"}
-          </span>
-          <span className={`badge ${schedule.stackedDays ? "" : "warn"}`}>
-            {schedule.stackedDays ? `${schedule.stackedDays} dia(s) seguidos` : "Poco apilado"}
-          </span>
-          <span className={`badge ${schedule.morningHours ? "warn" : ""}`}>
-            {schedule.morningHours ? `${schedule.morningHours} h manana` : "Manana baja"}
-          </span>
-        </div>
-      </article>
+function JeffCourseCard({ code, schedule }) {
+  const course = COURSES.find((item) => item.code === code);
+  const sectionId = schedule.selection[code];
+  const sectionInfo = course.sections.find((sectionItem) => sectionItem.id === sectionId);
 
-      {schedule.selectedCodes.map((code) => {
-        const course = COURSES.find((item) => item.code === code);
-        const sectionId = schedule.selection[code];
-        const sectionInfo = course.sections.find((sectionItem) => sectionItem.id === sectionId);
-        return (
-          <article key={`${code}-${sectionId}`} className={`course-card course-card-${personKey}`}>
-            <header>
-              <div>
-                <h3>{course.name}</h3>
-                <p>
-                  {course.code} | seccion {sectionId} | {course.credits} creditos
-                </p>
-              </div>
-              <span className="badge">{course.difficultyLabel}</span>
-            </header>
-            <p>{formatMeetings(sectionInfo.meetings)}</p>
-            <p className="meta-line">
-              <strong>Profesor:</strong> {sectionInfo.professor}
-            </p>
-            {sectionInfo.remoteDays.length ? (
-              <p className="meta-line">
-                <strong>Modalidad:</strong> presencial {formatDayList(sectionInfo.inPersonDays)} | virtual{" "}
-                {formatDayList(sectionInfo.remoteDays)}
-              </p>
-            ) : null}
-            <div className="tag-row">
-              <span className={`tag ${course.kind === "required" ? "" : "warn"}`}>
-                {course.kind === "required" ? "Obligatorio" : "Electivo"}
-              </span>
-              <span className={`tag ${course.availableFor.length === 2 ? "" : "rose"}`}>
-                {course.availableFor.length === 2 ? "Comun" : "Solo Gaby"}
-              </span>
-              {REQUIRED_GABY_CODES.includes(course.code) ? <span className="tag rose">Fijo para Gaby</span> : null}
-              {course.certifications.length ? <span className="tag">Certifica</span> : null}
-              {course.diplomas.length ? <span className="tag">Diploma</span> : null}
-              {sectionInfo.remoteDays.length ? <span className="tag warn">Semipresencial</span> : null}
-              {sectionInfo.remoteDays.includes("JUE") ? <span className="tag">Virtual en jueves</span> : null}
-            </div>
-          </article>
-        );
-      })}
-    </>
+  return (
+    <article className="course-card">
+      <header>
+        <div>
+          <p className="course-kicker">{course.kind === "required" ? "Obligatorio" : "Electivo"}</p>
+          <h3>{course.name}</h3>
+          <p>
+            {course.code} | seccion {sectionId} | {course.credits} creditos
+          </p>
+        </div>
+        <span className="pill">{course.difficultyLabel}</span>
+      </header>
+
+      <p>{formatMeetings(sectionInfo.meetings)}</p>
+      <p className="meta-line">
+        <strong>Profesor:</strong> {sectionInfo.professor}
+      </p>
+
+      {sectionInfo.remoteDays.length ? (
+        <p className="meta-line">
+          <strong>Modalidad:</strong> presencial {formatDayList(sectionInfo.inPersonDays)} | virtual {formatDayList(sectionInfo.remoteDays)}
+        </p>
+      ) : null}
+
+      <div className="course-tags">
+        {course.certifications.length ? <span className="pill success">Certifica</span> : null}
+        {course.diplomas.length ? <span className="pill">Diploma</span> : null}
+        {course.unlocks.length ? <span className="pill">Desbloquea</span> : null}
+        {sectionInfo.remoteDays.length ? <span className="pill subtle">Semipresencial</span> : null}
+      </div>
+    </article>
   );
 }
 
-function WeekBoard({ title, schedule, personKey }) {
+function WeekBoard({ schedule }) {
   return (
-    <section className={`schedule-card schedule-card-${personKey}`} style={SCHEDULE_DIMENSIONS_STYLE}>
-      <div className="schedule-head">
+    <section className="week-card" style={SCHEDULE_DIMENSIONS_STYLE}>
+      <div className="week-head">
         <div>
-          <p className="person-eyebrow">{personKey === "gaby" ? "Horario priorizado" : "Horario acompasado"}</p>
-          <h3>{title}</h3>
+          <p className="section-kicker">Semana sugerida</p>
+          <h3>Jeff</h3>
           <p>
-            {schedule.activeDays.length} dias activos | {schedule.meetings.length} bloque(s) | {schedule.gapHours} h de huecos
+            {schedule.totalCredits} creditos | {schedule.activeDays.length} dias | {schedule.gapHours} h de huecos
           </p>
         </div>
-        <div className="schedule-legend">
+
+        <div className="legend-row">
           <span className="legend-chip">Presencial</span>
           {schedule.remoteSessions ? <span className="legend-chip is-remote">Virtual</span> : null}
         </div>
@@ -585,6 +517,7 @@ function WeekBoard({ title, schedule, personKey }) {
                 <span key={day}>{day}</span>
               ))}
             </div>
+
             <div className="board-grid">
               {DAYS.map((day) => (
                 <div key={day}></div>
@@ -596,11 +529,12 @@ function WeekBoard({ title, schedule, personKey }) {
               const durationHours = meeting.end - meeting.start;
               const sizeClass = durationHours <= 2 ? "is-compact" : durationHours === 3 ? "is-medium" : "is-long";
               const timeLabel = `${formatHourLabel(meeting.start)} - ${formatHourLabel(meeting.end)}`;
+
               return (
                 <article
                   key={`${meeting.code}-${meeting.sectionId}-${meeting.day}-${meeting.start}`}
                   className={`meeting-block ${sizeClass} ${meeting.mode === "remote" ? "is-remote" : ""}`}
-                  aria-label={`${meeting.fullName} | ${meeting.professor} | Sec. ${meeting.sectionId} | ${DAY_NAME_BY_CODE[meeting.day]} ${meeting.start}:00-${meeting.end}:00 | ${meeting.mode === "remote" ? "Virtual" : "Presencial"}`}
+                  aria-label={`${meeting.fullName} | ${meeting.professor} | Sec. ${meeting.sectionId} | ${DAY_NAME_BY_CODE[meeting.day]} ${meeting.start}:00-${meeting.end}:00`}
                   style={{
                     left: `calc(${(DAYS.indexOf(meeting.day) / DAYS.length) * 100}% + 7px)`,
                     width: `calc(${100 / DAYS.length}% - 14px)`,
@@ -631,55 +565,8 @@ function InfoCard({ title, text }) {
   );
 }
 
-function ScenarioGroup({ title, description, scenarios, selectedScenarioId, onSelect }) {
-  return (
-    <section className="scenario-group-card">
-      <header className="scenario-group-head">
-        <div>
-          <p className="section-kicker">Bloque de simulacion</p>
-          <h3>{title}</h3>
-          <p>{description}</p>
-        </div>
-        <span className="badge">{scenarios.length} escenario(s)</span>
-      </header>
-
-      {scenarios.length ? (
-        <div className="scenario-list">
-          {scenarios.map((scenario) => {
-            const hasSaturday = scenario.gaby.saturdayCount || scenario.jeff.saturdayCount;
-            const heavyLoad = scenario.gaby.totalDifficulty >= 16 || scenario.jeff.totalDifficulty >= 14;
-            return (
-              <article
-                key={scenario.id}
-                className={`scenario-card ${scenario.id === selectedScenarioId ? "is-active" : ""}`}
-                onClick={() => onSelect(scenario.id)}
-              >
-                <div className="scenario-rank">{scenario.rank}</div>
-                <div>
-                  <div className="scenario-head">
-                    <div className="scenario-score">{scenario.score.toFixed(1)}</div>
-                    <div className="scenario-badges">
-                      <span className="badge">Gaby {scenario.gaby.totalCredits} cr</span>
-                      <span className="badge">Jeff {scenario.jeff.totalCredits} cr</span>
-                      <span className="badge">{scenario.sharedCodes.length} compartidos</span>
-                      <span className="badge">{scenario.sameSectionCodes.length} misma seccion</span>
-                    </div>
-                  </div>
-                  <p className="scenario-blurb">{scenario.reasons[0]}</p>
-                </div>
-                <div className="tag-row">
-                  {hasSaturday ? <span className="badge warn">Con sabado</span> : null}
-                  {heavyLoad ? <span className="badge rose">Carga exigente</span> : null}
-                </div>
-              </article>
-            );
-          })}
-        </div>
-      ) : (
-        <div className="loading">No salieron alternativas validas en este bloque con los topes actuales.</div>
-      )}
-    </section>
-  );
+function courseShortName(code) {
+  return COURSES.find((course) => course.code === code)?.shortName ?? code;
 }
 
 function formatDayList(days) {
@@ -688,14 +575,11 @@ function formatDayList(days) {
 
 function compactMeetingName(name) {
   return name
-    .replace("Gestion de Operaciones", "Gestion Op.")
-    .replace("Propuesta de Investigacion", "Propuesta")
-    .replace("Ing. del Conocimiento", "Ing. Conoc.")
-    .replace("Ingenieria del Conocimiento", "Ing. Conoc.")
-    .replace("Ing. Software I", "Ing. Software I")
-    .replace("Seguridad y Bienestar", "Seguridad")
-    .replace("Planeamiento", "Planeamiento")
-    .replace("Sistemas Distribuidos", "Distribuidos");
+    .replace("Programacion Movil", "Prog. Movil")
+    .replace("Analisis y Diseno de Algoritmos", "Algoritmos")
+    .replace("Planeamiento Estrategico", "Planeamiento")
+    .replace("Ingenieria del Conocimiento", "Ing. Conocimiento")
+    .replace("Propuesta de Investigacion", "Propuesta");
 }
 
 function formatHourLabel(hour) {
@@ -711,27 +595,4 @@ function compactProfessorName(name) {
     return name;
   }
   return parts.slice(0, 2).join(" ");
-}
-
-function collectCourseProfessors(course) {
-  return unique(course.sections.map((section) => section.professor));
-}
-
-function buildSummaryText(groups, settings) {
-  const total = flattenScenarioGroups(groups).length;
-  if (!total) {
-    return "No se encontraron escenarios validos con esos topes de creditos.";
-  }
-
-  const best = groups.all[0] ?? groups.withProposal[0] ?? groups.withoutProposal[0];
-  const profile = FOCUS_PROFILES[settings.focus];
-  return `Se encontraron ${groups.withProposal.length} escenarios con tesis y ${groups.withoutProposal.length} sin tesis para ${profile.label.toLowerCase()}. El mejor deja a Gaby con ${best.gaby.totalCredits} creditos y a Jeff con ${best.jeff.totalCredits}.`;
-}
-
-function unique(values) {
-  return [...new Set(values)];
-}
-
-function flattenScenarioGroups(groups) {
-  return [...groups.withProposal, ...groups.withoutProposal];
 }

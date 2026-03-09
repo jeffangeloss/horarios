@@ -1129,3 +1129,341 @@ function clampNumber(value, min, max) {
   }
   return Math.min(max, Math.max(min, value));
 }
+
+export const JEFF_COMPLETED_ELECTIVES = [
+  {
+    id: "iot",
+    name: "IoT",
+    kind: "Electivo ya cursado",
+    summary:
+      "Ya le da a Jeff una base aplicada en dispositivos y soluciones conectadas, asi que este ciclo puede concentrarse en certificados nuevos.",
+    certifications: [],
+    diplomas: [],
+  },
+  {
+    id: "650077",
+    code: "650077",
+    name: "Sistemas Distribuidos",
+    kind: "Electivo ya cursado",
+    summary:
+      "Ya deja una senal tecnica fuerte y aporta el certificado parcial de Computacion en la Nube para no repetir valor.",
+    certifications: ["Computacion en la Nube"],
+    diplomas: ["Tecnologias de la Informacion"],
+  },
+];
+
+const JEFF_COMPLETED_CERTIFICATIONS = unique(
+  JEFF_COMPLETED_ELECTIVES.flatMap((course) => course.certifications),
+);
+const JEFF_COMPLETED_DIPLOMAS = unique(JEFF_COMPLETED_ELECTIVES.flatMap((course) => course.diplomas));
+
+export const JEFF_PROFILE = {
+  name: "Jeff",
+  cycle: "2026-1",
+  mission:
+    "Armar un ciclo eficiente e interesante, con prioridad real en certificados y sin perder avance obligatorio.",
+  completedElectives: JEFF_COMPLETED_ELECTIVES,
+};
+
+export const JEFF_DEFAULT_SETTINGS = {
+  maxCredits: 16,
+  focus: "certificate",
+};
+
+export const JEFF_FOCUS_PROFILES = {
+  certificate: {
+    key: "certificate",
+    label: "Certificados primero",
+    description:
+      "Empuja los cursos que convierten el ciclo en certificados nuevos y mantiene la carga dentro de un bloque sostenible.",
+    certificateMultiplier: 1.35,
+    requiredMultiplier: 1.08,
+    curiosityMultiplier: 1,
+    comfortMultiplier: 1,
+    researchPenalty: 1.2,
+  },
+  balanced: {
+    key: "balanced",
+    label: "Balance tecnico",
+    description:
+      "Mantiene certificados, avance obligatorio y un ritmo ordenado para no abrir un ciclo innecesariamente pesado.",
+    certificateMultiplier: 1.12,
+    requiredMultiplier: 1.12,
+    curiosityMultiplier: 1,
+    comfortMultiplier: 1.08,
+    researchPenalty: 1.1,
+  },
+  exploration: {
+    key: "exploration",
+    label: "Perfil interesante",
+    description:
+      "Sigue buscando certificados, pero sube mas las combinaciones tecnicas y las rutas con mejor color de perfil.",
+    certificateMultiplier: 1.18,
+    requiredMultiplier: 0.98,
+    curiosityMultiplier: 1.28,
+    comfortMultiplier: 0.96,
+    researchPenalty: 0.95,
+  },
+};
+
+export function solveJeffPlans(rawSettings) {
+  const settings = normalizeJeffSettings(rawSettings);
+  const profile = JEFF_FOCUS_PROFILES[settings.focus];
+  const scenarios = buildSchedules("jeff", settings.maxCredits)
+    .filter((schedule) => schedule.totalCredits > 0)
+    .map((schedule) => evaluateJeffScenario(schedule, settings, profile))
+    .sort((left, right) => right.score - left.score);
+  const plans = finalizeJeffPlans(scenarios, 6);
+  const bestPlan = plans[0] ?? null;
+
+  return {
+    settings,
+    profile,
+    plans,
+    bestPlan,
+    completedElectives: JEFF_COMPLETED_ELECTIVES,
+    completedCertifications: JEFF_COMPLETED_CERTIFICATIONS,
+    completedDiplomas: JEFF_COMPLETED_DIPLOMAS,
+    summary: buildJeffSummary(plans, profile, settings),
+  };
+}
+
+function normalizeJeffSettings(rawSettings) {
+  return {
+    maxCredits: clampNumber(Number(rawSettings?.maxCredits ?? JEFF_DEFAULT_SETTINGS.maxCredits), 12, 21),
+    focus: JEFF_FOCUS_PROFILES[rawSettings?.focus] ? rawSettings.focus : JEFF_DEFAULT_SETTINGS.focus,
+  };
+}
+
+function evaluateJeffScenario(schedule, settings, profile) {
+  const requiredCodes = schedule.selectedCodes.filter((code) => COURSE_MAP.get(code).kind === "required");
+  const certificationCodes = schedule.selectedCodes.filter((code) => COURSE_MAP.get(code).certifications.length);
+  const technicalCodes = schedule.selectedCodes.filter((code) => {
+    const course = COURSE_MAP.get(code);
+    return course.kind === "elective" || course.difficulty >= 4;
+  });
+  const carriesProposal = schedule.selectedCodes.includes(PROPOSAL_CODE);
+  const newCertifications = schedule.certifications.filter((item) => !JEFF_COMPLETED_CERTIFICATIONS.includes(item));
+  const combinedCertifications = unique([...JEFF_COMPLETED_CERTIFICATIONS, ...schedule.certifications]);
+  const combinedDiplomas = unique([...JEFF_COMPLETED_DIPLOMAS, ...schedule.diplomas]);
+  const target = buildJeffLoadTarget(schedule, settings, profile);
+
+  const courseScore = schedule.selectedCodes.reduce((total, code) => {
+    const course = COURSE_MAP.get(code);
+    const requiredValue = course.kind === "required" ? 16 * profile.requiredMultiplier : 6;
+    const certificateValue = course.certifications.length * 12 * profile.certificateMultiplier;
+    const unlockValue = course.unlocks.length * 7 * profile.requiredMultiplier;
+    const diplomaValue = course.diplomas.length * 4.5 * profile.curiosityMultiplier;
+    const interestValue = course.difficulty * 1.6 * profile.curiosityMultiplier;
+    return total + requiredValue + certificateValue + unlockValue + diplomaValue + interestValue + course.credits * 1.5;
+  }, 0);
+
+  const strategicBonuses =
+    newCertifications.length * 26 * profile.certificateMultiplier +
+    certificationCodes.length * 9 * profile.certificateMultiplier +
+    requiredCodes.length * 6 * profile.requiredMultiplier +
+    (certificationCodes.length >= 2 ? 8 : 0) +
+    (requiredCodes.length >= 2 ? 5 : 0) +
+    (technicalCodes.length >= 3 ? 4 * profile.curiosityMultiplier : 0) +
+    (schedule.selectedCodes.includes("650030") && schedule.selectedCodes.includes("650072") ? 10 : 0) +
+    (schedule.selectedCodes.includes("650033") && schedule.selectedCodes.includes("650042") ? 6 : 0);
+
+  const comfortPenalty =
+    Math.abs(schedule.totalCredits - target.credits) * 4.8 +
+    Math.max(0, schedule.activeDays.length - target.days) * 4.2 +
+    schedule.saturdayCount * 11 +
+    schedule.gapHours * 1.85 +
+    Math.max(0, schedule.longestDay - target.longestDay) * 2.4 +
+    Math.max(0, schedule.totalDifficulty - target.difficulty) * 3.3 +
+    schedule.remoteBurden * 1.7 +
+    schedule.earlyCount * 0.9 +
+    Math.max(0, schedule.remoteSessions - 1) * 0.9 +
+    (carriesProposal ? 8.5 * profile.researchPenalty : 0) -
+    schedule.compactDays * 1.6;
+
+  const score = courseScore + strategicBonuses - comfortPenalty * profile.comfortMultiplier;
+  const headline = buildJeffHeadline({
+    carriesProposal,
+    newCertifications,
+    requiredCodes,
+    technicalCodes,
+    schedule,
+  });
+
+  return {
+    score,
+    headline,
+    paceLabel: buildJeffPaceLabel(schedule),
+    requiredCodes,
+    certificationCodes,
+    technicalCodes,
+    newCertifications,
+    combinedCertifications,
+    combinedDiplomas,
+    target,
+    reasons: buildJeffReasons(
+      schedule,
+      {
+        requiredCodes,
+        certificationCodes,
+        newCertifications,
+        combinedCertifications,
+        combinedDiplomas,
+        carriesProposal,
+      },
+      profile,
+      target,
+    ),
+    schedule,
+  };
+}
+
+function buildJeffLoadTarget(schedule, settings, profile) {
+  const carriesProposal = schedule.selectedCodes.includes(PROPOSAL_CODE);
+  const baseCredits = carriesProposal ? 13 : profile.key === "exploration" ? 16 : 15;
+
+  return {
+    credits: Math.min(baseCredits, settings.maxCredits),
+    days: profile.key === "exploration" ? 5 : 4,
+    difficulty: carriesProposal ? 15 : profile.key === "balanced" ? 16 : 17,
+    longestDay: carriesProposal ? 9 : profile.key === "exploration" ? 9 : 8,
+  };
+}
+
+function buildJeffHeadline({ carriesProposal, newCertifications, requiredCodes, technicalCodes, schedule }) {
+  if (newCertifications.length >= 2) {
+    return "Sprint dual de certificados";
+  }
+  if (!carriesProposal && requiredCodes.length >= 2 && schedule.gapHours <= 6) {
+    return "Cierre obligatorio bien amarrado";
+  }
+  if (technicalCodes.length >= 3) {
+    return "Bloque tecnico con perfil";
+  }
+  if (carriesProposal) {
+    return "Ruta con investigacion controlada";
+  }
+  return "Bloque estrategico para Jeff";
+}
+
+function buildJeffPaceLabel(schedule) {
+  if (schedule.saturdayCount || schedule.totalDifficulty >= 18 || schedule.longestDay >= 10) {
+    return "Exigente";
+  }
+  if (schedule.activeDays.length <= 4 && schedule.gapHours <= 5) {
+    return "Compacto";
+  }
+  return "Equilibrado";
+}
+
+function buildJeffReasons(schedule, meta, profile, target) {
+  const reasons = [];
+
+  if (meta.newCertifications.length >= 2) {
+    reasons.push(
+      `Activa ${meta.newCertifications.length} certificados nuevos en un solo ciclo: ${meta.newCertifications.join(", ")}.`,
+    );
+  } else if (meta.newCertifications.length === 1) {
+    reasons.push(`Asegura un certificado nuevo: ${meta.newCertifications[0]}.`);
+  } else {
+    reasons.push(
+      "No abre certificados nuevos, asi que solo sube si el cierre obligatorio y la forma del horario compensan el valor perdido.",
+    );
+  }
+
+  if (meta.certificationCodes.length >= 2) {
+    reasons.push(
+      `Mete las dos materias con mejor retorno de certificados este ciclo: ${meta.certificationCodes
+        .map(formatCourseBadge)
+        .join(", ")}.`,
+    );
+  } else if (meta.certificationCodes.length === 1) {
+    reasons.push(`Incluye al menos una materia de certificacion: ${formatCourseBadge(meta.certificationCodes[0])}.`);
+  }
+
+  if (meta.requiredCodes.length) {
+    reasons.push(
+      `No abandona el plan obligatorio: ${meta.requiredCodes.map(formatCourseBadge).join(", ")}.`,
+    );
+  }
+
+  if (meta.carriesProposal) {
+    reasons.push(
+      "Incluye Propuesta solo cuando el resto del bloque sigue respirable; aun asi recibe castigo porque distrae del frente de certificados.",
+    );
+  } else {
+    reasons.push("Deja Propuesta fuera para concentrar energia en certificados, cursos utiles y menos dispersion.");
+  }
+
+  if (!schedule.saturdayCount) {
+    reasons.push("Evita sabado, lo que deja un ritmo mas facil de sostener.");
+  }
+
+  if (schedule.activeDays.length <= target.days) {
+    reasons.push(`Se mueve en ${schedule.activeDays.length} dias activos, dentro del formato compacto buscado para Jeff.`);
+  }
+
+  if (schedule.gapHours <= 4) {
+    reasons.push(`Los huecos quedan controlados en ${schedule.gapHours} hora(s) semanales.`);
+  } else {
+    reasons.push(`Acepta ${schedule.gapHours} hora(s) de huecos porque el retorno curricular sigue siendo alto.`);
+  }
+
+  if (meta.combinedCertifications.length) {
+    reasons.push(
+      `Junto con lo ya ganado, Jeff termina proyectando certificados en ${meta.combinedCertifications.join(", ")}.`,
+    );
+  }
+
+  if (meta.combinedDiplomas.length) {
+    reasons.push(`Tambien empuja rutas de diploma en ${meta.combinedDiplomas.join(", ")}.`);
+  }
+
+  if (profile.key === "certificate") {
+    reasons.push("El enfoque actual premia mas las materias que cierran certificados parciales oficiales.");
+  } else if (profile.key === "balanced") {
+    reasons.push("El enfoque actual equilibra certificados, obligatorios y una carga que siga siendo util semana a semana.");
+  } else if (profile.key === "exploration") {
+    reasons.push("El enfoque actual sube mas los cursos tecnicos para que el ciclo se sienta interesante, no solo correcto.");
+  }
+
+  return reasons.slice(0, 8);
+}
+
+function finalizeJeffPlans(scenarios, limit) {
+  const selected = [];
+  const seen = new Set();
+
+  for (const scenario of scenarios) {
+    const signature = selectionSignature(scenario.schedule.selection);
+    if (seen.has(signature)) {
+      continue;
+    }
+
+    seen.add(signature);
+    selected.push({
+      ...scenario,
+      id: `jeff-${signature}`,
+      rank: selected.length + 1,
+    });
+
+    if (selected.length === limit) {
+      break;
+    }
+  }
+
+  return selected;
+}
+
+function buildJeffSummary(plans, profile, settings) {
+  if (!plans.length) {
+    return `No salieron combinaciones validas para Jeff con tope de ${settings.maxCredits} creditos.`;
+  }
+
+  const best = plans[0];
+  const certificateLine = best.newCertifications.length
+    ? `${best.newCertifications.length} certificado(s) nuevo(s)`
+    : "sin certificados nuevos";
+
+  return `Con ${profile.label.toLowerCase()}, el mejor bloque deja a Jeff con ${best.schedule.totalCredits} creditos, ${best.requiredCodes.length} obligatorios utiles y ${certificateLine}.`;
+}
